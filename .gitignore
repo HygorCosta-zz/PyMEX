@@ -1,2 +1,7 @@
 # Git ignore
 reservoir_tpl/
+Temp_Run/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]

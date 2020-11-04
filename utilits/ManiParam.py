@@ -60,7 +60,7 @@ class PyMEX(ImexTools):
 
         def alter_wells(well_type, number):
             """ Create the wells names."""
-            wells_name = [f"{well_type}{i + 1}" for i in range(number)]
+            wells_name = [f"'{well_type}{i + 1}'" for i in range(number)]
             return ' '.join(['*ALTER'] + wells_name)
 
         def wells_rate(well_prod):
@@ -97,7 +97,6 @@ class PyMEX(ImexTools):
         """
         type_opera = self.res_param["type_opera"]
         time_conc = self.res_param["time_concession"]
-        breakpoint()
         if type_opera == 0:  # full_capacity
             self.full_capacity()
         else:  # non - full - capacity
@@ -155,11 +154,11 @@ class PyMEX(ImexTools):
 
     def run_imex(self):
         """ call IMEX + Results Report. """
-        environ['CMG_HOME'] = '/opt/cmg'
+        environ['CMG_HOME'] = '/cmg'
 
         with open(self.basename['log'], "w") as log:
             dat_path = str(self.workdir.joinpath(self.basename['dat']))
-            path = ['/opt/cmg/RunSim.sh', 'imex', '2018.10', dat_path]
+            path = ['/cmg/RunSim.sh', 'imex', '2018.10', dat_path]
             procedure = Popen(path, stdout=log, cwd=str(self.run_path))
             procedure.wait()
             return self.get_production(log, procedure)
