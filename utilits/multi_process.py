@@ -38,9 +38,8 @@ class ParallelPyMex:
     def run_parallel(self, control):
         """ Run PyMEX with Pool."""
         model = PyMEX(control, self.res_param)
-        # model.call_pymex()
-        # return model.net_present_value
-        return model.basename
+        model.call_pymex()
+        return model.net_present_value
 
     def pool_pymex(self):
         """ Run imex in parallel.

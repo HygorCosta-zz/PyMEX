@@ -24,7 +24,7 @@ if __name__ == "__main__":
     with open('./reservoir_config.yaml') as f:
         res_param = yaml.load(f, Loader=yaml.FullLoader)
 
-    model = ParallelPyMex(controls, res_param, pool_size=None)
+    model = ParallelPyMex(controls, res_param, pool_size=2)
     npv = model.pool_pymex()
     print(npv)
 
