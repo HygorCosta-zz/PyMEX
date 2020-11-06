@@ -13,5 +13,4 @@
 
 from .ManiParam import PyMEX
 from .ImexTools import ImexTools
-from .PlotImex import PlotImex
 from .multi_process import ParallelPyMex
