@@ -11,8 +11,6 @@
 # Author: Hygor Costa
 """
 import yaml
-# from utilits import PyMEX
-# from utilits import PlotImex
 from utilits import ParallelPyMex
 
 if __name__ == "__main__":
