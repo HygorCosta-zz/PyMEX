@@ -1,7 +1,6 @@
 """ Parallel computation. """
 import multiprocessing as mp
-# from pathos.multiprocessing import ProcessingPool as Pool
-from utilits import PyMEX
+from .ManiParam import PyMEX
 
 
 class ParallelPyMex:
@@ -32,14 +31,14 @@ class ParallelPyMex:
         for control in self.controls:
             model = PyMEX(control, self.res_param)
             model.call_pymex()
-            npv.append(model.net_present_value)
+            npv.append(model.npv)
         return npv
 
     def run_parallel(self, control):
         """ Run PyMEX with Pool."""
         model = PyMEX(control, self.res_param)
         model.call_pymex()
-        return model.net_present_value
+        return model.npv
 
     def pool_pymex(self):
         """ Run imex in parallel.
