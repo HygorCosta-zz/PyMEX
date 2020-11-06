@@ -51,6 +51,7 @@ class PyMEX(ImexTools):
         self.production = np.array([])
         self.wells_rate = np.array([])
         self.average_pressure = np.array([])
+        self.npv = []
 
     def include_operation(self):
         """ Print operation of the wells."""
@@ -141,16 +142,17 @@ class PyMEX(ImexTools):
                        cwd=str(self.run_path))
             content_rwo = np.loadtxt(
                 self.basename['rwo'], skiprows=6, usecols=id_range)
-            time = content_rwo[:, id_time]
-            production = content_rwo[:, id_prod]
-            wells_rate = content_rwo[:, id_rate]
-            aver_press = content_rwo[:, id_press]
+            self.time = content_rwo[:, id_time]
+            self.production = content_rwo[:, id_prod]
+            self.wells_rate = content_rwo[:, id_rate]
+            self.average_pressure = content_rwo[:, id_press]
         else:
             # IMEX has failed, nullify production
-            production = np.zeros([len(self.time_steps), len(id_prod)])
-            wells_rate = np.zeros([len(self.time_steps), len(id_rate)])
-            aver_press = np.zeros([len(self.time_steps), 1])
-        return time, production, wells_rate, aver_press
+            self.production = np.zeros([len(self.time_steps),
+                                        len(id_prod)])
+            self.wells_rate = np.zeros([len(self.time_steps),
+                                        len(id_rate)])
+            self.average_pressure = np.zeros([len(self.time_steps), 1])
 
     def run_imex(self):
         """ call IMEX + Results Report. """
@@ -161,7 +163,7 @@ class PyMEX(ImexTools):
             path = ['/cmg/RunSim.sh', 'imex', '2018.10', dat_path]
             procedure = Popen(path, stdout=log, cwd=str(self.run_path))
             procedure.wait()
-            return self.get_production(log, procedure)
+            self.get_production(log, procedure)
 
     def restore_run(self):
         """ Restart the IMEX run."""
@@ -174,42 +176,64 @@ class PyMEX(ImexTools):
         if self.restore_file:
             content_rwo = np.loadtxt(
                 self.basename['rwo'], skiprows=6, usecols=id_range)
-            time = content_rwo[:, id_time]
-            production = content_rwo[:, id_prod]
-            wells_rate = content_rwo[:, id_rate]
-            aver_press = content_rwo[:, id_press]
+            self.time = content_rwo[:, id_time]
+            self.production = content_rwo[:, id_prod]
+            self.wells_rate = content_rwo[:, id_rate]
+            self.average_pressure = content_rwo[:, id_press]
         else:
             # IMEX has failed, nullify production
-            time = np.zeros([len(self.time_steps), len(id_time)])
-            production = np.zeros([len(self.time_steps), len(id_prod)])
-            wells_rate = np.zeros([len(self.time_steps), len(id_rate)])
-            aver_press = np.zeros([len(self.time_steps), 1])
-        return time, production, wells_rate, aver_press
+            self.time = np.zeros([len(self.time_steps), len(id_time)])
+            self.production = np.zeros([len(self.time_steps),
+                                        len(id_prod)])
+            self.wells_rate = np.zeros([len(self.time_steps),
+                                        len(id_rate)])
+            self.average_pressure = np.zeros([len(self.time_steps), 1])
 
-    @ property
     def net_present_value(self):
         """ Calculate the net present value of the \
             reservoir production"""
-        oil_price, water_prod_cost, water_inj_cost, discount_rate\
+        discount_rate = self.res_param["prices"][-1]
+
+        # Convert to periodic rate
+        periodic_rate = ((1 + discount_rate) ** (1 / 365)) - 1
+
+        # Create the cash flow (x 10^6) (Format of the numpy.npv())
+        cash_flows = self.cash_flow()
+
+        # Discount tax
+        tax = 1 / np.power((1 + periodic_rate), self.time)
+        self.npv = np.sum(np.multiply(cash_flows, tax.T))
+
+    def _dif_production(self):
+        """ Calculate the increase amount by time step."""
+        dif_volume = []
+        for volume in self.production.T:
+            dif_volume.append(np.diff(volume))
+        return dif_volume
+
+    def cash_flow(self):
+        """ Return the cash flow from production."""
+        oil_price, water_prod_cost, water_inj_cost, _\
             = self.res_param["prices"]
 
-        vol_oil_prod, vol_water_prod, _, vol_water_inj\
-            = self.production.T
+        dif_volume = self._dif_production()
+        vol_oil_prod = dif_volume[0]
+        vol_water_prod = dif_volume[1]
+        vol_water_inj = dif_volume[3]
 
         # Multiply by each price
         revenue_oil = vol_oil_prod * oil_price
         cost_water_prod = vol_water_prod * water_prod_cost
         cost_water_inj = vol_water_inj * water_inj_cost
 
-        # Create the cash flow (x 10^6) (Format of the numpy.npv())
+        # Cash flow
         cash_flows = revenue_oil - cost_water_prod - cost_water_inj
-        npv = npf.npv(discount_rate, cash_flows) * (-1) * 10 ** (-6)
-        return npv
+
+        return np.insert(cash_flows, 0, 0)
 
     def call_pymex(self):
         """
-
-        :rtype: float
+        Run Imex.
         """
         if not self.restore_file:
             # Verify if the Run_Path exist
@@ -222,14 +246,15 @@ class PyMEX(ImexTools):
             self.rwd_file()
 
             # Run Imex + Results Report
-            self.time, self.production, self.wells_rate, \
-                self.average_pressure = self.run_imex()
+            self.run_imex()
+
+            # Evaluate the net present value
+            self.net_present_value()
 
             # Remove all files create in Run Imex
             self.clean_up()
         else:
-            self.time, self.production, self.wells_rate,\
-                self.average_pressure = self.restore_run()
+            self.restore_run()
 
     @ property
     def report_resul(self):
