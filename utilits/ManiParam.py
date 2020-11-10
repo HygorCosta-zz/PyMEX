@@ -18,7 +18,6 @@ from os import remove, environ
 from subprocess import Popen, check_call
 from pathlib import Path
 import numpy as np
-import numpy_financial as npf
 from .ImexTools import ImexTools
 
 
@@ -66,7 +65,7 @@ class PyMEX(ImexTools):
 
         def wells_rate(well_prod):
             """ Return the string of the wells rate."""
-            prod_values = map(str, well_prod)
+            prod_values = map(str, np.round(well_prod, 4))
             return ' '.join(prod_values)
 
         for time_step, well_prod in zip(self.time_steps(),
@@ -79,7 +78,7 @@ class PyMEX(ImexTools):
                 time = '**TIME ' + str(time_step)
             prod_name = alter_wells("PROD", nb_prod)
             prod_rate = wells_rate(well_prod[: nb_prod])
-            inj_name = alter_wells("INJ", nb_inj)
+            inj_name = alter_wells("INJECT", nb_inj)
             inj_rate = wells_rate(well_prod[nb_prod:])
 
             lines = [div, time, div, prod_name, prod_rate,
@@ -140,8 +139,14 @@ class PyMEX(ImexTools):
             check_call([imex_path, "-f", self.basename['rwd'], "-o",
                         self.basename['rwo']], stdout=log,
                        cwd=str(self.run_path))
-            content_rwo = np.loadtxt(
-                self.basename['rwo'], skiprows=6, usecols=id_range)
+            try:
+                with open(self.basename['rwo']) as rwo:
+                    content_rwo = np.loadtxt(rwo, skiprows=6,
+                                             usecols=id_range)
+            except StopIteration as err:
+                print("StopIteration error: Failed in Imex run.")
+                print(f"Verify {self.basename['log']}")
+                raise err
             self.time = content_rwo[:, id_time]
             self.production = content_rwo[:, id_prod]
             self.wells_rate = content_rwo[:, id_rate]
@@ -189,21 +194,6 @@ class PyMEX(ImexTools):
                                         len(id_rate)])
             self.average_pressure = np.zeros([len(self.time_steps), 1])
 
-    def net_present_value(self):
-        """ Calculate the net present value of the \
-            reservoir production"""
-        discount_rate = self.res_param["prices"][-1]
-
-        # Convert to periodic rate
-        periodic_rate = ((1 + discount_rate) ** (1 / 365)) - 1
-
-        # Create the cash flow (x 10^6) (Format of the numpy.npv())
-        cash_flows = self.cash_flow()
-
-        # Discount tax
-        tax = 1 / np.power((1 + periodic_rate), self.time)
-        self.npv = np.sum(np.multiply(cash_flows, tax.T))
-
     def _dif_production(self):
         """ Calculate the increase amount by time step."""
         dif_volume = []
@@ -230,6 +220,22 @@ class PyMEX(ImexTools):
         cash_flows = revenue_oil - cost_water_prod - cost_water_inj
 
         return np.insert(cash_flows, 0, 0)
+
+    def net_present_value(self):
+        """ Calculate the net present value of the \
+            reservoir production"""
+        discount_rate = self.res_param["prices"][-1]
+
+        # Convert to periodic rate
+        periodic_rate = ((1 + discount_rate) ** (1 / 365)) - 1
+
+        # Create the cash flow (x 10^6) (Format of the numpy.npv())
+        cash_flows = self.cash_flow()
+
+        # Discount tax
+        tax = 1 / np.power((1 + periodic_rate), self.time)
+        npv_value = np.sum(np.multiply(cash_flows, tax.T))
+        self.npv = npv_value * (-1e-6)
 
     def call_pymex(self):
         """
