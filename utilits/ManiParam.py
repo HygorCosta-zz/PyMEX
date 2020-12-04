@@ -68,22 +68,31 @@ class PyMEX(ImexTools):
             prod_values = map(str, np.round(well_prod, 4))
             return ' '.join(prod_values)
 
-        for time_step, well_prod in zip(self.time_steps(),
-                                        self.modif_controls):
-
+        def write_alter(day, control, nb_prod, nb_inj):
+            """ Write the ALTER element."""
             div = '**' + '-' * 30
-            if time_step != 0:
-                time = '*TIME ' + str(time_step)
-            else:
-                time = '**TIME ' + str(time_step)
+            time = '*TIME ' + str(day)
             prod_name = alter_wells("PROD", nb_prod)
-            prod_rate = wells_rate(well_prod[: nb_prod])
+            prod_rate = wells_rate(control[: nb_prod])
             inj_name = alter_wells("INJECT", nb_inj)
-            inj_rate = wells_rate(well_prod[nb_prod:])
+            inj_rate = wells_rate(control[nb_prod:])
 
             lines = [div, time, div, prod_name, prod_rate,
                      div, inj_name, inj_rate, div, '\n']
-            content_text += '\n'.join(lines)
+            return '\n'.join(lines)
+
+        times = np.arange(0, self.res_param["time_concession"], 30)
+
+        count = 0
+        for time_step in times:
+            if time_step in self.time_steps():
+                control = self.modif_controls[count]
+                content_text += write_alter(time_step, control,
+                                            nb_prod, nb_inj)
+                count += 1
+            else:
+                time = '*TIME ' + str(time_step) + '\n'
+                content_text += time
 
         return content_text
 
