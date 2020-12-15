@@ -42,8 +42,9 @@ class PyMEX(ImexTools):
         Manipulate the files give in.
     """
 
-    def __init__(self, controls, *args):
+    def __init__(self, controls, tpl, *args):
         super().__init__(controls, *args)
+        self.tpl = tpl
         self.restore_file = False
         self.basename = self.cmgfile(create_name())
         self.time = np.array([])
@@ -112,7 +113,8 @@ class PyMEX(ImexTools):
             pass
 
         # create *.dat from template
-        tpl_name = self.file_to_open(self.res_param["template"])
+        # tpl_name = self.file_to_open(self.res_param["template"])
+        tpl_name = self.file_to_open(self.tpl)
         with open(tpl_name, "r") as tpl_file, \
                 open(self.basename['dat'], "w") as dat:
             template_content = tpl_file.read()

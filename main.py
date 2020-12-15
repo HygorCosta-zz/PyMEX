@@ -18,6 +18,7 @@ if __name__ == "__main__":
     controls1 = [0.5, 0.5, 1]*2
     controls2 = [0.7, 0.3, 0.8]*2
     controls = [controls1, controls2]
+    breakpoint()
 
     with open('./reservoir_config.yaml') as f:
         res_param = yaml.load(f, Loader=yaml.FullLoader)
