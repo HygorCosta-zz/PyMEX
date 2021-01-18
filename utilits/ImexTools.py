@@ -1,4 +1,4 @@
-"""IMex Tools.
+"""Imex Tools.
 # *- coding: utf8 -*-
 # Copyright (c) 2019 Hygor Costa
 #
@@ -14,6 +14,7 @@
 
 from collections import namedtuple
 from pathlib import Path
+import os
 import numpy as np
 
 
@@ -32,14 +33,18 @@ class ImexTools:
         """
         self.controls = well_controls
         self.res_param = res_param
-        self.workdir = Path.cwd()  # IMEX work directory
-        self.run_path = self.workdir.joinpath('Temp_Run')
-        self.limit_controls = self.limit_variables()
-        self.modif_controls = self.multiply_variables()
+        if res_param['run_folder']:
+            self.run_path = os.path.join(res_param['path'],
+                                         res_param['run_folder'])
+        else:
+            self.run_path = os.path.join(res_param['path'])
+        if well_controls:
+            self.limit_controls = self.limit_variables()
+            self.modif_controls = self.multiply_variables()
 
     def file_to_open(self, name):
         """ Open file."""
-        data_folder = Path(self.res_param["path"])
+        data_folder = Path(self.run_path)
         file = data_folder / name
         return file
 
@@ -60,7 +65,7 @@ class ImexTools:
         :param basename:
         :return:
         """
-        basename = str(self.run_path.joinpath(basename))
+        basename = os.path.join(self.run_path, basename)
         Extension = namedtuple("Extension", "dat out irf mrf rwd \
                                rwo log sr3")
         basename = Extension(basename + ".dat",

@@ -12,9 +12,10 @@
 # Author: Hygor Costa
 """
 import re
+import pandas as pd
 import multiprocessing as mp
 from string import Template
-from os import remove, environ
+import os
 from subprocess import Popen, check_call
 from pathlib import Path
 import numpy as np
@@ -42,16 +43,25 @@ class PyMEX(ImexTools):
         Manipulate the files give in.
     """
 
-    def __init__(self, controls, tpl, *args):
+    def __init__(self, controls, tpl, restore_file, *args):
         super().__init__(controls, *args)
+        self.prod = []
         self.tpl = tpl
-        self.restore_file = False
+        self.restore_file = restore_file
         self.basename = self.cmgfile(create_name())
-        self.time = np.array([])
-        self.production = np.array([])
-        self.wells_rate = np.array([])
-        self.average_pressure = np.array([])
         self.npv = []
+        self.__call__()
+
+    def _control_time(self):
+        """ Define control time."""
+        time_conc = self.res_param['time_concession']
+        times = np.linspace(0, time_conc,
+                            int(time_conc / 30) + 1,
+                            dtype=int)
+        control_time = np.round(self.time_steps()[:-1])
+        id_sort = np.searchsorted(times, control_time)
+        times = np.unique(np.insert(times, id_sort, control_time))
+        return control_time, times
 
     def include_operation(self):
         """ Print operation of the wells."""
@@ -72,7 +82,10 @@ class PyMEX(ImexTools):
         def write_alter(day, control, nb_prod, nb_inj):
             """ Write the ALTER element."""
             div = '**' + '-' * 30
-            time = '*TIME ' + str(day)
+            if day == 0:
+                time = '**TIME ' + str(day)
+            else:
+                time = '*TIME ' + str(day)
             prod_name = alter_wells("PROD", nb_prod)
             prod_rate = wells_rate(control[: nb_prod])
             inj_name = alter_wells("INJECT", nb_inj)
@@ -82,15 +95,19 @@ class PyMEX(ImexTools):
                      div, inj_name, inj_rate, div, '\n']
             return '\n'.join(lines)
 
-        times = np.arange(0, self.res_param["time_concession"], 30)
-
+        control_time, times = self._control_time()
         count = 0
-        for time_step in times:
-            if time_step in self.time_steps():
+        ctime = control_time[count]
+
+        for time_step in times[:-1]:
+            if count < len(control_time) and \
+                    ctime == time_step:
                 control = self.modif_controls[count]
-                content_text += write_alter(time_step, control,
+                content_text += write_alter(ctime, control,
                                             nb_prod, nb_inj)
                 count += 1
+                if count < len(control_time):
+                    ctime = control_time[count]
             else:
                 time = '*TIME ' + str(time_step) + '\n'
                 content_text += time
@@ -109,73 +126,74 @@ class PyMEX(ImexTools):
         time_conc = self.res_param["time_concession"]
         if type_opera == 0:  # full_capacity
             self.full_capacity()
-        else:  # non - full - capacity
-            pass
 
-        # create *.dat from template
-        # tpl_name = self.file_to_open(self.res_param["template"])
-        tpl_name = self.file_to_open(self.tpl)
+        tpl_name = os.path.join(self.run_path, self.tpl)
         with open(tpl_name, "r") as tpl_file, \
                 open(self.basename['dat'], "w") as dat:
             template_content = tpl_file.read()
 
-            operation_content = ''.join(self.include_operation())
-            stop = [f'*TIME {time_conc}', "*STOP"]
-            operation_content += '\n'.join(stop)
+            if self.controls:
+                operation_content = ''.join(self.include_operation())
+                stop = [f'*TIME {time_conc}', "*STOP"]
+                operation_content += '\n'.join(stop)
 
-            template_content = re.sub(r"[\W][\W]WELL_INC",
-                                      operation_content, template_content)
+                template_content = re.sub(r"[\W][\W]WELL_INC",
+                                          operation_content,
+                                          template_content)
             dat.write(template_content)
 
     def rwd_file(self):
         """create *.rwd (output conditions) from report.tmpl. """
-        tpl_report = self.file_to_open("NewTemplateReport.tpl")
+        tpl_report = os.path.join(self.res_param['path'],
+                                  self.res_param['tpl_report'])
         with open(tpl_report, "r") as tmpl, \
                 open(self.basename['rwd'], "w") as rwd:
             tpl = Template(tmpl.read())
             content = tpl.substitute(IRFFILE=self.basename['irf'])
             rwd.write(content)
 
+    def _colum_names(self):
+        """ Define the range of columns from rwo file."""
+        if self.res_param['wells_resul']:
+            nprod = self.res_param['nprod']
+            cum_op = [f"cum_op_p{i + 1}" for i in range(nprod)]
+            cum_or = [f"cum_or_p{i + 1}" for i in range(nprod)]
+            self.prod.columns = ['time'] + cum_op + cum_or
+        else:
+            col_name = ['cum_op', 'cum_wp', 'cum_gp', 'cum_wi',
+                        'oil_rate', 'wat_rate', 'liq_rate',
+                        'pressure']
+            self.prod.columns = col_name
+
     def get_production(self, log, procedure):
         """ Get production for results."""
-        # columns in output spreadsheet (lexicographic order)
-        id_range = range(0, 10)
-        id_time = [0]  # 0 column
-        id_prod = range(1, 5)  # 1, 2 e 3 columns
-        id_rate = range(5, 9)  # 4, 5 e 6 columns
-        id_press = [9]  # 7 columns
         if procedure.returncode == 0:
-            # get oil rate SC for all 20 producer wells
             imex_path = "/cmg/br/2018.10/linux_x64/exe/report.exe"
             check_call([imex_path, "-f", self.basename['rwd'], "-o",
                         self.basename['rwo']], stdout=log,
                        cwd=str(self.run_path))
             try:
                 with open(self.basename['rwo']) as rwo:
-                    content_rwo = np.loadtxt(rwo, skiprows=6,
-                                             usecols=id_range)
+                    self.prod = pd.read_csv(rwo,
+                                            sep='\t',
+                                            index_col=False,
+                                            header=6)
             except StopIteration as err:
                 print("StopIteration error: Failed in Imex run.")
                 print(f"Verify {self.basename['log']}")
                 raise err
-            self.time = content_rwo[:, id_time]
-            self.production = content_rwo[:, id_prod]
-            self.wells_rate = content_rwo[:, id_rate]
-            self.average_pressure = content_rwo[:, id_press]
+            self.prod = self.prod.dropna(axis=1, how='all')
+            self._colum_names()
         else:
-            # IMEX has failed, nullify production
-            self.production = np.zeros([len(self.time_steps),
-                                        len(id_prod)])
-            self.wells_rate = np.zeros([len(self.time_steps),
-                                        len(id_rate)])
-            self.average_pressure = np.zeros([len(self.time_steps), 1])
+            # IMEX has failed, receive None
+            self.prod = None
 
     def run_imex(self):
         """ call IMEX + Results Report. """
-        environ['CMG_HOME'] = '/cmg'
+        # environ['CMG_HOME'] = '/cmg'
 
         with open(self.basename['log'], "w") as log:
-            dat_path = str(self.workdir.joinpath(self.basename['dat']))
+            dat_path = self.basename['dat']
             path = ['/cmg/RunSim.sh', 'imex', '2018.10', dat_path]
             procedure = Popen(path, stdout=log, cwd=str(self.run_path))
             procedure.wait()
@@ -183,32 +201,20 @@ class PyMEX(ImexTools):
 
     def restore_run(self):
         """ Restart the IMEX run."""
-        # columns in output spreadsheet (lexicographic order)
-        id_range = range(0, 10)
-        id_time = [0]  # 0 column
-        id_prod = range(1, 5)  # 1, 2 e 3 columns
-        id_rate = range(5, 9)  # 4, 5 e 6 columns
-        id_press = [9]  # 7 columns
-        if self.restore_file:
-            content_rwo = np.loadtxt(
-                self.basename['rwo'], skiprows=6, usecols=id_range)
-            self.time = content_rwo[:, id_time]
-            self.production = content_rwo[:, id_prod]
-            self.wells_rate = content_rwo[:, id_rate]
-            self.average_pressure = content_rwo[:, id_press]
-        else:
-            # IMEX has failed, nullify production
-            self.time = np.zeros([len(self.time_steps), len(id_time)])
-            self.production = np.zeros([len(self.time_steps),
-                                        len(id_prod)])
-            self.wells_rate = np.zeros([len(self.time_steps),
-                                        len(id_rate)])
-            self.average_pressure = np.zeros([len(self.time_steps), 1])
+        with open(self.basename['rwo']) as rwo:
+            self.prod = pd.read_csv(rwo,
+                                    sep='\t',
+                                    index_col=False,
+                                    header=6)
+        self.prod = self.prod.dropna(axis=1, how='all')
+        self._colum_names()
 
     def _dif_production(self):
         """ Calculate the increase amount by time step."""
         dif_volume = []
-        for volume in self.production.T:
+        product = self.prod[['cum_op', 'cum_wp',
+                             'cum_gp', 'cum_wi']].to_numpy()
+        for volume in product.T:
             dif_volume.append(np.diff(volume))
         return dif_volume
 
@@ -244,11 +250,12 @@ class PyMEX(ImexTools):
         cash_flows = self.cash_flow()
 
         # Discount tax
-        tax = 1 / np.power((1 + periodic_rate), self.time)
+        time = self.prod['time'].to_numpy()
+        tax = 1 / np.power((1 + periodic_rate), time)
         npv_value = np.sum(np.multiply(cash_flows, tax.T))
         self.npv = npv_value * (-1e-6)
 
-    def call_pymex(self):
+    def __call__(self):
         """
         Run Imex.
         """
@@ -266,25 +273,19 @@ class PyMEX(ImexTools):
             self.run_imex()
 
             # Evaluate the net present value
-            self.net_present_value()
+            if not self.res_param['wells_resul']:
+                self.net_present_value()
 
             # Remove all files create in Run Imex
             self.clean_up()
         else:
             self.restore_run()
 
-    @ property
-    def report_resul(self):
-        """ Return concatenate time, production, wells_rate,\
-            average pressure"""
-        return [self.time, self.production, self.wells_rate,
-                self.average_pressure]
-
     def clean_up(self):
         """ Delet imex auxiliar files."""
         for _, filename in self.basename.items():
             try:
-                remove(filename)
+                os.remove(filename)
             except OSError:
                 print(f"File {filename} could not be removed,\
                       check if it's yet open.")

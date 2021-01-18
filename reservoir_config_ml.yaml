@@ -1,0 +1,29 @@
+# Reservoir Simulation configuration.
+tpl_report: 'NewTemplateReport_Wells.tpl'
+path: "/home/hygorcosta/Documentos/Phd/PlotPymex/PyMEX/reservoir_tpl"
+run_folder: 'egg_lay/original'
+ups_level: 0
+template:
+  # - 'Egg_wav_3.tpl'
+  # - 'Egg_wav_2.tpl'
+  # - 'Egg_wav_3.dat'
+  # - 'Egg_ari_1.dat'
+  # - 'Egg_ari_2.tpl'
+  # - 'Egg_ari_1.tpl'
+  - 'Egg_Model_IMEX.dat'
+  # - 'Egg_Model_IMEX_2lay.dat'
+original: 'Egg_original.tpl'
+prices: [126, 19, 6, 0]
+nb_cycles: 3
+nb_prod: 4
+nb_inj: 8
+time_concession: 3600
+max_rate_prod: 120
+max_rate_inj: 79.5
+max_plat_prod: 400
+max_plat_inj: 440
+type_opera: 1
+type_time: 0
+# Results options
+wells_resul: True
+nprod: 4
